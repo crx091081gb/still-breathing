@@ -3,3 +3,4 @@ ofxEvm
 ofxGui
 ofxKinect
 ofxOpenCv
+ofxVideoRecorder

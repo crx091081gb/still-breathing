@@ -44,6 +44,7 @@ void ofApp::setup(){
     gui.add(slitRatio.set("Slit Position", 0.75, 0.0, 1.0));
     gui.add(trackerPersistence.set("Tracker Persistence", 30, 0, 100));
     gui.add(trackerMaxDistance.set("Tracker Max Distance", 30, 0, 100));
+    gui.add(live.set("Live Kinect", true));
 
     //set up image buffers and contour finders
     for (int i=0; i<4; i++) {
@@ -67,6 +68,22 @@ void ofApp::setup(){
     tracker.setPersistence(trackerPersistence);
     tracker.setMaximumDistance(trackerMaxDistance);
     
+    //video recorder for kinect signal
+    fileName1 = "kinect-video";
+    fileName2 = "kinect-depth";
+    fileExt = ".mov";
+    
+    vidRecorder1.setVideoCodec("mpeg4");
+    vidRecorder1.setVideoBitrate("800k");
+    
+    ofAddListener(vidRecorder1.outputFileCompleteEvent, this, &ofApp::recordingComplete);
+    ofAddListener(vidRecorder2.outputFileCompleteEvent, this, &ofApp::recordingComplete);
+    
+    recordedVideoPlayback.load("kinect-video-test.mov");
+    recordedDepthPlayback.load("kinect-depth-test.mov");
+    recordedVideoPlayback.play();
+    recordedDepthPlayback.play();
+    
     ofSetFrameRate(60);
     ofSetVerticalSync(true);
     ofBackground(0);
@@ -74,29 +91,92 @@ void ofApp::setup(){
 
 //--------------------------------------------------------------
 void ofApp::update(){
-    
+    updateParams();
     ofBackground(100, 100, 100);
     
-    kinect.update();
-    updateParams();
-    // there is a new frame and we are connected
-    if(kinect.isFrameNew()) {
-        //read in colour image
-        colourImg = cv::Mat(kinect.height, kinect.width, CV_8UC3, kinect.getPixels(), 0);
-        toOf(colourImg, ofColourImg);
-        ofColourImg.update();
+    cv::Mat colourImg;
+    cv::Mat depthImg;
+    if (live) {
+        kinect.update();
+        // there is a new frame and we are connected
+        if(kinect.isFrameNew()) {
+            //read in colour image
+            colourImg = cv::Mat(kinect.height, kinect.width, CV_8UC3, kinect.getPixels(), 0);
+            
+            //convert to of format for display and recording
+            toOf(colourImg, ofColourImg);
+            ofColourImg.update();
+            
+            //record colour image
+            if (bRecording) {
+                bool success = vidRecorder1.addFrame(kinect.getPixels());
+                if (!success) {
+                    ofLogWarning("This frame was not added");
+                }
+            }
+            
+            // Check if the video recorder encountered any error while writing video frame or audio smaples.
+            if (vidRecorder1.hasVideoError()) {
+                ofLogWarning("The video recorder failed to write some frames!");
+            }
+            
+            if (vidRecorder1.hasAudioError()) {
+                ofLogWarning("The video recorder failed to write some audio samples!");
+            }
+            
+            //read in depth image
+            depthImg = cv::Mat(kinect.height, kinect.width, CV_8UC1, kinect.getDepthPixels(), 0);
+            
+            //force 3 channel copy for display and recording
+            cv::Mat bgr;
+            cv::cvtColor(depthImg, bgr, CV_GRAY2BGR);
+            
+            //convert to of format for display and recording
+            toOf(bgr, ofDepthImg);
+            ofDepthImg.update();
+            
+            //record depth image
+            if (bRecording) {
+                bool success = vidRecorder2.addFrame(ofDepthImg.getPixels());
+                if (!success) {
+                    ofLogWarning("This frame was not added");
+                }
+            }
+            newFrame = true;
+        } else {
+            newFrame = false;
+        }
+    } else {
+        recordedVideoPlayback.update();
+        recordedDepthPlayback.update();
+        if (recordedVideoPlayback.isFrameNew() && recordedDepthPlayback.isFrameNew()) {
+            //read in colour image
+            colourImg = cv::Mat(recordedVideoPlayback.getHeight(), recordedVideoPlayback.getWidth(), CV_8UC3, recordedVideoPlayback.getPixels(), 0);
+            
+            //convert to of format for display and recording
+            toOf(colourImg, ofColourImg);
+            ofColourImg.update();
+            
+            //read in depth image
+            cv::Mat bgr = cv::Mat(recordedDepthPlayback.getHeight(), recordedDepthPlayback.getWidth(), CV_8UC3, recordedDepthPlayback.getPixels(), 0);
+            //force back to 1 channel
+            cv::cvtColor(bgr, depthImg, CV_BGR2GRAY);
+            toOf(bgr, ofDepthImg);
+            ofDepthImg.update();
+            
+            newFrame = true;
+        } else {
+            newFrame = false;
+        }
+    }
+    
+    if (newFrame) {
+        
         //feed colour image to evm filter
         evm.update(colourImg);
-        //read in depth image
-        depthImg = cv::Mat(kinect.height, kinect.width, CV_8UC1, kinect.getDepthPixels(), 0);
+        
         //background cull
         threshold(depthImg, depthThreshold);
-        
-        //colourise depth image
-        cv::Mat falseColorsMap;
-        applyColorMap(depthImg, falseColorsMap, cv::COLORMAP_AUTUMN);
-        toOf(falseColorsMap, ofDepthImg);
-        ofDepthImg.update();
         
         //blob track people
         depthContourFinder.findContours(depthImg);
@@ -123,7 +203,6 @@ void ofApp::update(){
             }
             i++;
         }
-        
     }
     
     //fps in window title
@@ -192,7 +271,11 @@ void ofApp::draw(){
 
 //--------------------------------------------------------------
 void ofApp::exit() {
-  kinect.close();
+    ofRemoveListener(vidRecorder1.outputFileCompleteEvent, this, &ofApp::recordingComplete);
+    ofRemoveListener(vidRecorder2.outputFileCompleteEvent, this, &ofApp::recordingComplete);
+    vidRecorder1.close();
+    vidRecorder2.close();
+    kinect.close();
 }
 //--------------------------------------------------------------
 void ofApp::updateParams()
@@ -232,7 +315,10 @@ void ofApp::scanSlice(ofPixels_<float>& src, ofPixels& dst, int _offset) {
         memcpy(&dst[l*bytesPerLine], &dst[(l-1)*bytesPerLine], bytesPerLine);
     }
     
-    
+}
+//--------------------------------------------------------------
+void ofApp::recordingComplete(ofxVideoRecorderOutputFileCompleteEventArgs& args){
+    cout << "The recoded video file is now complete." << endl;
 }
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
@@ -241,7 +327,33 @@ void ofApp::keyPressed(int key){
 
 //--------------------------------------------------------------
 void ofApp::keyReleased(int key){
-
+    if(key=='r'){
+        bRecording = !bRecording;
+        if(bRecording && !vidRecorder1.isInitialized() && !vidRecorder2.isInitialized()) {
+            vidRecorder1.setup(fileName1+ofGetTimestampString()+fileExt, kinect.getWidth(), kinect.getHeight(), 30);
+            vidRecorder2.setup(fileName2+ofGetTimestampString()+fileExt, kinect.getWidth(), kinect.getHeight(), 30);
+            //          vidRecorder.setup(fileName+ofGetTimestampString()+fileExt, vidGrabber.getWidth(), vidGrabber.getHeight(), 30); // no audio
+            //            vidRecorder.setup(fileName+ofGetTimestampString()+fileExt, 0,0,0, sampleRate, channels); // no video
+            //          vidRecorder.setupCustomOutput(vidGrabber.getWidth(), vidGrabber.getHeight(), 30, sampleRate, channels, "-vcodec mpeg4 -b 1600k -acodec mp2 -ab 128k -f mpegts udp://localhost:1234"); // for custom ffmpeg output string (streaming, etc)
+            
+            // Start recording
+            vidRecorder1.start();
+            vidRecorder2.start();
+        }
+        else if(!bRecording && vidRecorder1.isInitialized() && vidRecorder2.isInitialized()) {
+            vidRecorder1.setPaused(true);
+            vidRecorder2.setPaused(true);
+        }
+        else if(bRecording && vidRecorder1.isInitialized() && vidRecorder2.isInitialized()) {
+            vidRecorder1.setPaused(false);
+            vidRecorder2.setPaused(false);
+        }
+    }
+    if(key=='c'){
+        bRecording = false;
+        vidRecorder1.close();
+        vidRecorder2.close();
+    }
 }
 
 //--------------------------------------------------------------

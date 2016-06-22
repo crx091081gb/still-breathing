@@ -6,6 +6,7 @@
 #include "ofxOpenCv.h"
 #include "ofxCv.h"
 #include "ofxKinect.h"
+#include "ofxVideoRecorder.h"
 
 class BlobPeople : public ofxCv::RectFollower {
 protected:
@@ -40,6 +41,7 @@ class ofApp : public ofBaseApp{
     ofParameter<float> minArea, maxArea, breathBlobThreshold, depthThreshold, minDepthArea, maxDepthArea, slitRatio;
     ofParameter<int> trackerPersistence, trackerMaxDistance;
     ofParameter<bool> invert;
+    ofParameter<bool> live;
     
     vector<ofxCv::ContourFinder> contourFinders;
     vector<ofImage> scanSlices;
@@ -53,6 +55,21 @@ class ofApp : public ofBaseApp{
     ofxCv::ContourFinder depthContourFinder;
     ofxCv::RectTrackerFollower<BlobPeople> tracker;
     
+    ofxVideoRecorder vidRecorder1;
+    ofxVideoRecorder vidRecorder2;
+    
+    ofVideoPlayer recordedVideoPlayback;
+    ofVideoPlayer recordedDepthPlayback;
+    
+    string fileName1;
+    string fileName2;
+    string fileExt;
+    
+    bool bRecording;
+    bool bPlaying;
+    
+    bool newFrame;
+    
 	public:
 		void setup();
 		void update();
@@ -60,6 +77,7 @@ class ofApp : public ofBaseApp{
         void exit();
         void scanSlice(ofPixels_<float> & src, ofPixels& dst, int offset);
         void updateParams();
+        void recordingComplete(ofxVideoRecorderOutputFileCompleteEventArgs& args);
 		void keyPressed(int key);
 		void keyReleased(int key);
 		void mouseMoved(int x, int y );
@@ -71,5 +89,4 @@ class ofApp : public ofBaseApp{
 		void windowResized(int w, int h);
 		void dragEvent(ofDragInfo dragInfo);
 		void gotMessage(ofMessage msg);
-		
 };
