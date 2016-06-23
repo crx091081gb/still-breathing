@@ -6,6 +6,25 @@ using namespace ofxCv;
 void ofApp::setup(){
     ofSetLogLevel(OF_LOG_VERBOSE);
     
+    //gui stuff
+    gui.setup();
+    gui.add(alpha.setup("alpha", 15, 0, 20));
+    gui.add(cutoff.setup("cutoff", 16, 0, 20));
+    gui.add(min_freq.setup("min_freq", 0.05, 0, 2));
+    gui.add(max_freq.setup("max_freq", 0.4, 0, 2));
+    gui.add(chrome.setup("chrome", 0.1, 0, 2));
+    gui.add(breathBlobThreshold.set("Breath Blob Threshold", 220, 0, 255));
+    gui.add(minArea.set("Min area", 4, 0, 30));
+    gui.add(maxArea.set("Max area", 10, 1, 60));
+    gui.add(invert.set("Invert", false));
+    gui.add(depthThreshold.set("Depth threshold", 175, 0, 255));
+    gui.add(minDepthArea.set("Min people blob size", 100, 1, 500));
+    gui.add(maxDepthArea.set("Max people blob size", 200, 1, 1000));
+    gui.add(slitRatio.set("Slit Position", 0.75, 0.0, 1.0));
+    gui.add(trackerPersistence.set("Tracker Persistence", 30, 0, 100));
+    gui.add(trackerMaxDistance.set("Tracker Max Distance", 30, 0, 100));
+    
+    
     // enable depth->video image calibration
     kinect.setRegistration(true);
     
@@ -19,33 +38,23 @@ void ofApp::setup(){
         ofLogNotice() << "zero plane pixel size: " << kinect.getZeroPlanePixelSize() << "mm";
         ofLogNotice() << "zero plane dist: " << kinect.getZeroPlaneDistance() << "mm";
         
-        //allocate texture
-        ofColourImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
-        ofDepthImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
+        //set use live kinect true
+        gui.add(live.set("Live Kinect", true));
+        
+    } else {
+        //set use live kinect false
+        gui.add(live.set("Live Kinect", false));
     }
+    
+    //allocate textures
+    ofColourImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
+    ofDepthImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
+    ofThreshImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
     
     //TODO ADD IFNDEF AND PUT WEBCAM / KINECT VERSIONS IN ONE FILE
     //video.initGrabber(640, 480);
     
-    //gui stuff
-    gui.setup();
-    gui.add(alpha.setup("alpha", 15, 0, 20));
-    gui.add(cutoff.setup("cutoff", 16, 0, 20));
-    gui.add(min_freq.setup("min_freq", 0.05, 0, 2));
-    gui.add(max_freq.setup("max_freq", 0.4, 0, 2));
-    gui.add(chrome.setup("chrome", 0.1, 0, 2));
-    gui.add(breathBlobThreshold.set("Breath Blob Threshold", 220, 0, 255));
-    gui.add(minArea.set("Min area", 4, 0, 30));
-    gui.add(maxArea.set("Max area", 10, 1, 60));
-    gui.add(invert.set("Invert", false));
-    gui.add(depthThreshold.set("Depth threshold", 95, 0, 255));
-    gui.add(minDepthArea.set("Min people blob size", 100, 1, 500));
-    gui.add(maxDepthArea.set("Max people blob size", 200, 1, 1000));
-    gui.add(slitRatio.set("Slit Position", 0.75, 0.0, 1.0));
-    gui.add(trackerPersistence.set("Tracker Persistence", 30, 0, 100));
-    gui.add(trackerMaxDistance.set("Tracker Max Distance", 30, 0, 100));
-    gui.add(live.set("Live Kinect", true));
-
+    
     //set up image buffers and contour finders
     for (int i=0; i<4; i++) {
         //separate images and contourfinders necessary as each slitscan
@@ -68,13 +77,16 @@ void ofApp::setup(){
     tracker.setPersistence(trackerPersistence);
     tracker.setMaximumDistance(trackerMaxDistance);
     
-    //video recorder for kinect signal
+    //video recorder settings for kinect signal
     fileName1 = "kinect-video";
     fileName2 = "kinect-depth";
     fileExt = ".mov";
     
     vidRecorder1.setVideoCodec("mpeg4");
     vidRecorder1.setVideoBitrate("800k");
+    
+    vidRecorder2.setVideoCodec("mpeg4");
+    vidRecorder2.setVideoBitrate("800k");
     
     ofAddListener(vidRecorder1.outputFileCompleteEvent, this, &ofApp::recordingComplete);
     ofAddListener(vidRecorder2.outputFileCompleteEvent, this, &ofApp::recordingComplete);
@@ -83,10 +95,12 @@ void ofApp::setup(){
     recordedDepthPlayback.load("kinect-depth-test.mov");
     recordedVideoPlayback.play();
     recordedDepthPlayback.play();
-    
-    ofSetFrameRate(60);
+   
+    //of screen stuff
+    ofSetFrameRate(30);
     ofSetVerticalSync(true);
     ofBackground(0);
+    ofEnableAlphaBlending();
 }
 
 //--------------------------------------------------------------
@@ -96,57 +110,68 @@ void ofApp::update(){
     
     cv::Mat colourImg;
     cv::Mat depthImg;
+    
     if (live) {
-        kinect.update();
-        // there is a new frame and we are connected
-        if(kinect.isFrameNew()) {
-            //read in colour image
-            colourImg = cv::Mat(kinect.height, kinect.width, CV_8UC3, kinect.getPixels(), 0);
-            
-            //convert to of format for display and recording
-            toOf(colourImg, ofColourImg);
-            ofColourImg.update();
-            
-            //record colour image
-            if (bRecording) {
-                bool success = vidRecorder1.addFrame(kinect.getPixels());
-                if (!success) {
-                    ofLogWarning("This frame was not added");
+        if (kinect.isConnected()) {
+            kinect.update();
+            // there is a new frame and we are connected
+            if(kinect.isFrameNew()) {
+                //read in colour image
+                colourImg = cv::Mat(kinect.height, kinect.width, CV_8UC3, kinect.getPixels(), 0);
+                
+                //convert to of format for display and recording
+                toOf(colourImg, ofColourImg);
+                ofColourImg.update();
+                
+                //record colour image
+                if (bRecording) {
+                    bool success = vidRecorder1.addFrame(kinect.getPixels());
+                    if (!success) {
+                        ofLogWarning("This frame was not added");
+                    }
                 }
-            }
-            
-            // Check if the video recorder encountered any error while writing video frame or audio smaples.
-            if (vidRecorder1.hasVideoError()) {
-                ofLogWarning("The video recorder failed to write some frames!");
-            }
-            
-            if (vidRecorder1.hasAudioError()) {
-                ofLogWarning("The video recorder failed to write some audio samples!");
-            }
-            
-            //read in depth image
-            depthImg = cv::Mat(kinect.height, kinect.width, CV_8UC1, kinect.getDepthPixels(), 0);
-            
-            //force 3 channel copy for display and recording
-            cv::Mat bgr;
-            cv::cvtColor(depthImg, bgr, CV_GRAY2BGR);
-            
-            //convert to of format for display and recording
-            toOf(bgr, ofDepthImg);
-            ofDepthImg.update();
-            
-            //record depth image
-            if (bRecording) {
-                bool success = vidRecorder2.addFrame(ofDepthImg.getPixels());
-                if (!success) {
-                    ofLogWarning("This frame was not added");
+                
+                // Check if the video recorder encountered any error while writing video frame or audio smaples.
+                if (vidRecorder1.hasVideoError()) {
+                    ofLogWarning("The video recorder failed to write some frames!");
                 }
+                
+                if (vidRecorder1.hasAudioError()) {
+                    ofLogWarning("The video recorder failed to write some audio samples!");
+                }
+                
+                //read in depth image
+                depthImg = cv::Mat(kinect.height, kinect.width, CV_8UC1, kinect.getDepthPixels(), 0);
+                
+                //force 3 channel copy for display and recording
+                cv::Mat bgr;
+                cv::cvtColor(depthImg, bgr, CV_GRAY2BGR);
+                
+                //convert to of format for display and recording
+                toOf(bgr, ofDepthImg);
+                ofDepthImg.update();
+                
+                //record depth image
+                if (bRecording) {
+                    bool success = vidRecorder2.addFrame(ofDepthImg.getPixels());
+                    if (!success) {
+                        ofLogWarning("This frame was not added");
+                    }
+                }
+                
+                //recieved a new frames worth of data
+                newFrame = true;
+            } else {
+                //nothing happened so don't try and process data later
+                newFrame = false;
             }
-            newFrame = true;
         } else {
+            //lost connection
+            live = false;
             newFrame = false;
         }
     } else {
+        //playing back test video footage
         recordedVideoPlayback.update();
         recordedDepthPlayback.update();
         if (recordedVideoPlayback.isFrameNew() && recordedDepthPlayback.isFrameNew()) {
@@ -177,10 +202,14 @@ void ofApp::update(){
         
         //background cull
         threshold(depthImg, depthThreshold);
+        toOf(depthImg, ofThreshImg);
+        ofThreshImg.update();
         
         //blob track people
         depthContourFinder.findContours(depthImg);
         tracker.track(depthContourFinder.getBoundingRects());
+        
+        
         
         //iterate thru blobs
         int i=0;
@@ -226,14 +255,19 @@ void ofApp::draw(){
     
     //draw depth map
     ofDepthImg.draw(kinect.getWidth(), kinect.getHeight());
+    ofSetColor(255,0,0,128);
+    ofThreshImg.draw(kinect.width, kinect.height);
+    ofSetColor(255,255,255,255);
     ofPushMatrix();
     ofTranslate(kinect.getWidth(), kinect.getHeight());
     depthContourFinder.draw();
     ofPopMatrix();
-
+    //ofSort(tracker.getFollowers());
+    
     //draw blob tracked humans
     int i = 0;
-    for (auto &follower : tracker.getFollowers() ) {
+    for (BlobPeople &follower : tracker.getFollowers() ) {
+
         follower.draw();
         //draw chest balls
         ofVec2f b;
@@ -318,7 +352,11 @@ void ofApp::scanSlice(ofPixels_<float>& src, ofPixels& dst, int _offset) {
 }
 //--------------------------------------------------------------
 void ofApp::recordingComplete(ofxVideoRecorderOutputFileCompleteEventArgs& args){
-    cout << "The recoded video file is now complete." << endl;
+    cout << "The recorded video file is now complete." << endl;
+}
+//--------------------------------------------------------------
+bool ofApp::sortPeople(BlobPeople &b1, BlobPeople &b2) {
+
 }
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
@@ -405,7 +443,6 @@ void BlobPeople::setup(const cv::Rect& track) {
     color.setHsb(ofRandom(0, 255), 255, 255);
     cur = toOf(track).getCenter();
     smooth = cur;
-    cout << "new blob " << endl;
 }
 
 void BlobPeople::update(const cv::Rect& track) {

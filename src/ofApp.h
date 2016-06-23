@@ -51,6 +51,7 @@ class ofApp : public ofBaseApp{
     
     cv::Mat depthImg;
     ofImage ofDepthImg;
+    ofImage ofThreshImg;
     
     ofxCv::ContourFinder depthContourFinder;
     ofxCv::RectTrackerFollower<BlobPeople> tracker;
@@ -78,6 +79,7 @@ class ofApp : public ofBaseApp{
         void scanSlice(ofPixels_<float> & src, ofPixels& dst, int offset);
         void updateParams();
         void recordingComplete(ofxVideoRecorderOutputFileCompleteEventArgs& args);
+        bool sortPeople(BlobPeople &b1, BlobPeople &b2);
 		void keyPressed(int key);
 		void keyReleased(int key);
 		void mouseMoved(int x, int y );
