@@ -12,6 +12,7 @@ class BlobPeople : public ofxCv::RectFollower {
 protected:
     ofColor color;
     ofVec2f cur;
+    //const cv::Rect& _track;
     
 public:
     ofVec2f smooth;
@@ -39,7 +40,7 @@ class ofApp : public ofBaseApp{
     ofxFloatSlider max_freq;
     ofxFloatSlider chrome;
     ofParameter<float> minArea, maxArea, breathBlobThreshold, depthThreshold, minDepthArea, maxDepthArea, slitRatio;
-    ofParameter<int> trackerPersistence, trackerMaxDistance;
+    ofParameter<int> trackerPersistence, trackerMaxDistance, frameVelThresh, stillThresh;
     ofParameter<bool> invert;
     ofParameter<bool> live;
     
@@ -55,6 +56,8 @@ class ofApp : public ofBaseApp{
     
     ofxCv::ContourFinder depthContourFinder;
     ofxCv::RectTrackerFollower<BlobPeople> tracker;
+    std::map<int, uint64_t> stillLabels;
+    std::map<int, cv::Rect> stillRects;
     
     ofxVideoRecorder vidRecorder1;
     ofxVideoRecorder vidRecorder2;

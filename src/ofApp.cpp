@@ -23,7 +23,8 @@ void ofApp::setup(){
     gui.add(slitRatio.set("Slit Position", 0.75, 0.0, 1.0));
     gui.add(trackerPersistence.set("Tracker Persistence", 30, 0, 100));
     gui.add(trackerMaxDistance.set("Tracker Max Distance", 30, 0, 100));
-    
+    gui.add(frameVelThresh.set("Blob Velocity Threshold", 5, 0, 100));
+    gui.add(stillThresh.set("Stillness Threshold", 30, 0, 100));
     
     // enable depth->video image calibration
     kinect.setRegistration(true);
@@ -207,24 +208,53 @@ void ofApp::update(){
         
         //blob track people
         depthContourFinder.findContours(depthImg);
-        tracker.track(depthContourFinder.getBoundingRects());
+        //tracker.track(depthContourFinder.getBoundingRects());
         
+        RectTracker &dTracker = depthContourFinder.getTracker();
+        for (int i = 0; i < depthContourFinder.size(); i++) {
+            int label = depthContourFinder.getLabel(i);
+            //work out velocity
+            if (dTracker.existsPrevious(label)) {
+                const cv::Rect &current = dTracker.getCurrent(label);
+                const cv::Rect &previous = dTracker.getPrevious(label);
+                ofVec2f previousPosition(previous.x + previous.width / 2, previous.y + previous.height / 2);
+                ofVec2f currentPosition(current.x + current.width / 2, current.y + current.height / 2);
+                ofVec2f velocity = currentPosition-previousPosition;
+                if (velocity.length() < frameVelThresh) {
+                    if (stillLabels.find(label)==stillLabels.end()) {
+                        stillLabels[label]=ofGetFrameNum();
+                    }
+                } else {
+                    stillLabels.erase(label);
+                    stillRects.erase(label);
+                }
+            }
+            
+        }
         
+        for (auto &d : dTracker.getDeadLabels()) {
+            stillLabels.erase(d);
+            stillRects.erase(d);
+        }
         
-        //iterate thru blobs
-        int i=0;
-        for (auto &follower : tracker.getFollowers() ) {
-            //try to work out chest position by assuming it lies a certain percentage way up the bounding rectangle
+        for (auto &label : stillLabels) {
+            uint64_t stillFor = ofGetFrameNum() - label.second;
+            //cout << label.first << " has been still for " << stillFor << " frames" << endl;
+            if (stillFor >= stillThresh) {
+                
+                if(stillRects.find(label.first) == stillRects.end()) {
+                    stillRects[label.first] = dTracker.getCurrent(label.first);
+                    
+                }
+            }
+        }
+        
+        int i = 0;
+        for (auto &r : stillRects) {
+            //cout << "x = " << r.second.x << endl;
             ofVec2f b;
-            b.y = follower.bottom + (slitRatio*follower.height);
-            b.x = follower.smooth.x;
-            
-            
-            //TODO get the age and velocity
-            //cout << follower.getLabel() << " age " << tracker.getAge(follower.getLabel()) << endl;
-
-            //get the four oldest (this code is incorrect)
-            //and slitscan at chest pos
+            b.y = r.second.br().y + (slitRatio * (r.second.tl().y - r.second.br().y));
+            b.x = r.second.x + r.second.width/2;
             if (i < 4) {
                 scanSlice(evm.result.getPixels(), scanSlices[i].getPixels(), b.y);
                 scanSlices[i].update();
@@ -232,6 +262,31 @@ void ofApp::update(){
             }
             i++;
         }
+        
+        //chop up screen and 
+        
+//        //iterate thru blobs
+//        int i=0;
+//        for (auto &follower : tracker.getFollowers() ) {
+//            //try to work out chest position by assuming it lies a certain percentage way up the bounding rectangle
+//            ofVec2f b;
+//            b.y = follower.bottom + (slitRatio*follower.height);
+//            b.x = follower.smooth.x;
+//            
+//            //cout << follower._track.x << endl;
+//            
+//            //TODO get the age and velocity
+//            //cout << follower.getLabel() << " age " << tracker.getAge(follower.getLabel()) << endl;
+//
+//            //get the four oldest (this code is incorrect)
+//            //and slitscan at chest pos
+//            if (i < 4) {
+//                scanSlice(evm.result.getPixels(), scanSlices[i].getPixels(), b.y);
+//                scanSlices[i].update();
+//                contourFinders[i].findContours(scanSlices[i]);
+//            }
+//            i++;
+//        }
     }
     
     //fps in window title
@@ -263,42 +318,73 @@ void ofApp::draw(){
     depthContourFinder.draw();
     ofPopMatrix();
     //ofSort(tracker.getFollowers());
-    
-    //draw blob tracked humans
-    int i = 0;
-    for (BlobPeople &follower : tracker.getFollowers() ) {
 
-        follower.draw();
-        //draw chest balls
+    int i = 0;
+    for (auto &r : stillRects) {
         ofVec2f b;
-        b.y = follower.bottom + (slitRatio*follower.height);
-        b.x = follower.smooth.x;
+        b.y = r.second.br().y + (slitRatio * (r.second.tl().y - r.second.br().y));
+        b.x = r.second.x + r.second.width/2;
+        cout << b.x << " : " << b.y << endl;
         ofSetColor(255,255,255);
-        ofPushMatrix();
-        ofTranslate(kinect.getWidth(), kinect.getHeight());
-        ofDrawCircle(b, 10);
-        ofPopMatrix();
-        //draw image buffers and contour finders
-        if (i < 4) {
-            //void ofImage_::drawSubsection(float x, float y, float w, float h, float sx, float sy)
-            int x = follower.left;
-            int y = 0;
-            int w = follower.right - x;
-            int h = kinect.getHeight();
-            ofPushMatrix();
-            //ofPushStyle();
-            ofTranslate(0,kinect.getHeight());
-            ofSetColor(255);
-            scanSlices[i].drawSubsection(x, y, w, h, x, y);
-            ofSetColor(0);
-            ofSetLineWidth(3);
-            contourFinders[i].draw();
-            //ofPopStyle();
-            ofPopMatrix();
-        }
+                ofPushMatrix();
+                ofTranslate(kinect.getWidth(), kinect.getHeight());
+                ofDrawCircle(b, 20);
+                ofPopMatrix();
+                //draw image buffers and contour finders
+                if (i < 4) {
+                    //void ofImage_::drawSubsection(float x, float y, float w, float h, float sx, float sy)
+                    int x = r.second.tl().x;
+                    int y = 0;
+                    int w = r.second.width;
+                    int h = kinect.getHeight();
+                    ofPushMatrix();
+                    //ofPushStyle();
+                    ofTranslate(0,kinect.getHeight());
+                    ofSetColor(255);
+                    scanSlices[i].drawSubsection(x, y, w, h, x, y);
+                    ofSetColor(0);
+                    ofSetLineWidth(3);
+                    contourFinders[i].draw();
+                    //ofPopStyle();
+                    ofPopMatrix();
+                }
         i++;
     }
-    
+//    //draw blob tracked humans
+//    int i = 0;
+//    for (BlobPeople &follower : tracker.getFollowers() ) {
+//        
+//        follower.draw();
+//        //draw chest balls
+//        ofVec2f b;
+//        b.y = follower.bottom + (slitRatio*follower.height);
+//        b.x = follower.smooth.x;
+//        ofSetColor(255,255,255);
+//        ofPushMatrix();
+//        ofTranslate(kinect.getWidth(), kinect.getHeight());
+//        ofDrawCircle(b, 10);
+//        ofPopMatrix();
+//        //draw image buffers and contour finders
+//        if (i < 4) {
+//            //void ofImage_::drawSubsection(float x, float y, float w, float h, float sx, float sy)
+//            int x = follower.left;
+//            int y = 0;
+//            int w = follower.right - x;
+//            int h = kinect.getHeight();
+//            ofPushMatrix();
+//            //ofPushStyle();
+//            ofTranslate(0,kinect.getHeight());
+//            ofSetColor(255);
+//            scanSlices[i].drawSubsection(x, y, w, h, x, y);
+//            ofSetColor(0);
+//            ofSetLineWidth(3);
+//            contourFinders[i].draw();
+//            //ofPopStyle();
+//            ofPopMatrix();
+//        }
+//        i++;
+//    }
+//    
     //draw gui
     gui.draw();
 }
@@ -452,7 +538,7 @@ void BlobPeople::update(const cv::Rect& track) {
     bottom = track.br().y;
     left = track.tl().x;
     right = track.br().x;
-    
+
     
 }
 
