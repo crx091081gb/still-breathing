@@ -27,6 +27,11 @@ public:
     void draw();
 };
 
+class sortableVec {
+    public:
+        ofVec3f v;
+};
+
 class ofApp : public ofBaseApp{
 
     ofxKinect kinect;
@@ -40,6 +45,7 @@ class ofApp : public ofBaseApp{
     ofxFloatSlider max_freq;
     ofxFloatSlider chrome;
     ofParameter<float> minArea, maxArea, breathBlobThreshold, depthThreshold, minDepthArea, maxDepthArea, slitRatio;
+    ofParameter<float> gridMinArea, gridMaxArea, gridThreshold;
     ofParameter<int> trackerPersistence, trackerMaxDistance, frameVelThresh, stillThresh;
     ofParameter<bool> invert;
     ofParameter<bool> live;
@@ -58,6 +64,14 @@ class ofApp : public ofBaseApp{
     ofxCv::RectTrackerFollower<BlobPeople> tracker;
     std::map<int, uint64_t> stillLabels;
     std::map<int, cv::Rect> stillRects;
+    
+    const int rows = 4;
+    const int cols = 4;
+    const int chunks = 16;
+    ofImage ofDepthGridTest;
+    //cv::Mat grid;
+    cv::Rect depthImgROIGrid[16];
+    ofxCv::ContourFinder gridContours[16];
     
     ofxVideoRecorder vidRecorder1;
     ofxVideoRecorder vidRecorder2;
@@ -83,6 +97,7 @@ class ofApp : public ofBaseApp{
         void updateParams();
         void recordingComplete(ofxVideoRecorderOutputFileCompleteEventArgs& args);
         bool sortPeople(BlobPeople &b1, BlobPeople &b2);
+        bool sortVectorByLength(ofVec3f & a, ofVec3f & b);
 		void keyPressed(int key);
 		void keyReleased(int key);
 		void mouseMoved(int x, int y );

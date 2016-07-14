@@ -2,6 +2,8 @@
 using namespace cv;
 using namespace ofxCv;
 
+
+
 //--------------------------------------------------------------
 void ofApp::setup(){
     ofSetLogLevel(OF_LOG_VERBOSE);
@@ -25,7 +27,10 @@ void ofApp::setup(){
     gui.add(trackerMaxDistance.set("Tracker Max Distance", 30, 0, 100));
     gui.add(frameVelThresh.set("Blob Velocity Threshold", 5, 0, 100));
     gui.add(stillThresh.set("Stillness Threshold", 30, 0, 100));
-    
+    //grid contour tracker settings
+    gui.add(gridMinArea.set("Grid Min Blob Size", 100, 1, 500));
+    gui.add(gridMaxArea.set("Grid Max Blob Size", 200, 1, 500));
+    gui.add(gridThreshold.set("Grid Threshold", 5, 0, 100));
     // enable depth->video image calibration
     kinect.setRegistration(true);
     
@@ -51,7 +56,7 @@ void ofApp::setup(){
     ofColourImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
     ofDepthImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
     ofThreshImg.allocate(kinect.width, kinect.height, OF_IMAGE_COLOR);
-    
+    ofDepthGridTest.allocate(100, 100, OF_IMAGE_COLOR);
     //TODO ADD IFNDEF AND PUT WEBCAM / KINECT VERSIONS IN ONE FILE
     //video.initGrabber(640, 480);
     
@@ -77,6 +82,20 @@ void ofApp::setup(){
     //track blobs in thresholded depth map and assume their humans
     tracker.setPersistence(trackerPersistence);
     tracker.setMaximumDistance(trackerMaxDistance);
+    
+    //set up roi grid and contour trackers
+    int chunkWidth = kinect.width / cols;
+    int chunkHeight = kinect.height / rows;
+    int count = 0;
+    for (unsigned int x = 0; x < cols; x++) {
+        for (unsigned int y = 0; y < rows; y++) {
+            depthImgROIGrid[count] = cv::Rect(x*chunkWidth, y*chunkHeight, chunkWidth, chunkHeight);
+            gridContours[count].setMinAreaRadius(gridMinArea);
+            gridContours[count].setMaxAreaRadius(gridMaxArea);
+            gridContours[count].setThreshold(gridThreshold);
+            count++;
+        }
+    }
     
     //video recorder settings for kinect signal
     fileName1 = "kinect-video";
@@ -263,7 +282,45 @@ void ofApp::update(){
             i++;
         }
         
-        //chop up screen and 
+        //chop up screen
+        Mat grid[16];
+        for (int i = 0; i < chunks; i++) {
+            depthImg(depthImgROIGrid[i]).copyTo(grid[i]);
+            gridContours[i].findContours(grid[i]);
+            //
+            RectTracker &dTracker = gridContours[i].getTracker();
+            //vector<sortableVec> vels;
+            vector<ofVec3f> vels;
+            for (int j = 0; j < gridContours[i].size(); j++) {
+                int label = gridContours[i].getLabel(j);
+                //work out velocity
+                if (dTracker.existsPrevious(label)) {
+                    const cv::Rect &current = dTracker.getCurrent(label);
+                    const cv::Rect &previous = dTracker.getPrevious(label);
+                    ofVec2f previousPosition(previous.x + previous.width / 2, previous.y + previous.height / 2);
+                    ofVec2f currentPosition(current.x + current.width / 2, current.y + current.height / 2);
+                    ofVec2f velocity = currentPosition-previousPosition;
+                    //sortableVec v;
+                    //v.v = velocity;
+                    //vels.push_back(v);
+                    vels.push_back(velocity);
+                    
+                }
+            }
+            //ofSort(vels, sortVectorByLength);
+            if (vels.size() > 0) {
+                cout << "grid number = " << i << " velocity mag = " << vels[0].length() << endl;
+            }
+        }
+        
+        
+//        cv::Mat grid;
+//        cv::Rect roi = cv::Rect(300, 300, 100, 100);
+//        //grid = depthImg(depthImgROIGrid[0]);
+//        grid = depthImg(roi);
+          toOf(grid[5], ofDepthGridTest);
+          ofDepthGridTest.update();
+
         
 //        //iterate thru blobs
 //        int i=0;
@@ -299,8 +356,40 @@ void ofApp::update(){
 void ofApp::draw(){
     //draw camera feed
     ofSetColor(255,255,255);
+    
+    ///
+    
+    
+    //drawMat(grid, 0, 0);
+    
+    ///
+    
+    
     video.draw(0, 0);
-    ofColourImg.draw(0,0);
+    //ofColourImg.draw(0,0);
+    //ofDepthGridTest.draw(0,0);
+    
+    int chunkWidth = kinect.width / cols;
+    int chunkHeight = kinect.height / rows;
+    
+    
+    int chunk = 0;
+    for(int x = 0; x < cols; x++) {
+        for(int y = 0; y < rows; y++) {
+            ofPushMatrix();
+            ofTranslate(x*chunkWidth, 0);
+            ofTranslate(0, y*chunkHeight);
+            ofSetLineWidth(3);
+            //ofDrawCircle(0, 0, 10);
+            
+            gridContours[chunk].draw();
+            if (chunk == 5) {
+                ofDepthGridTest.draw(0,0);
+            }
+            chunk++;
+            ofPopMatrix();
+        }
+    }
     
     //draw evm
     ofPushMatrix();
@@ -324,7 +413,7 @@ void ofApp::draw(){
         ofVec2f b;
         b.y = r.second.br().y + (slitRatio * (r.second.tl().y - r.second.br().y));
         b.x = r.second.x + r.second.width/2;
-        cout << b.x << " : " << b.y << endl;
+        //cout << b.x << " : " << b.y << endl;
         ofSetColor(255,255,255);
                 ofPushMatrix();
                 ofTranslate(kinect.getWidth(), kinect.getHeight());
@@ -385,6 +474,9 @@ void ofApp::draw(){
 //        i++;
 //    }
 //    
+    //draw grid contours
+    
+    
     //draw gui
     gui.draw();
 }
@@ -417,6 +509,12 @@ void ofApp::updateParams()
         cf.setMinAreaRadius(minArea);
         cf.setMaxAreaRadius(maxArea);
         cf.setThreshold(breathBlobThreshold);
+    }
+    
+    for (auto &cf : gridContours) {
+        cf.setMinAreaRadius(gridMinArea);
+        cf.setMaxAreaRadius(gridMaxArea);
+        cf.setThreshold(gridThreshold);
     }
 }
 //--------------------------------------------------------------
