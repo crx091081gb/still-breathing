@@ -22,7 +22,7 @@ void ofApp::setup(){
     gui.add(depthThreshold.set("Depth threshold", 175, 0, 255));
     gui.add(minDepthArea.set("Min people blob size", 100, 1, 500));
     gui.add(maxDepthArea.set("Max people blob size", 200, 1, 1000));
-    gui.add(slitRatio.set("Slit Position", 0.75, 0.0, 1.0));
+    gui.add(slitRatio.set("Slit Position", 0.65, 0.0, 1.0));
     gui.add(trackerPersistence.set("Tracker Persistence", 30, 0, 100));
     gui.add(trackerMaxDistance.set("Tracker Max Distance", 30, 0, 100));
     gui.add(frameVelThresh.set("Blob Velocity Threshold", 5, 0, 100));
@@ -115,6 +115,9 @@ void ofApp::setup(){
     recordedDepthPlayback.load("kinect-depth-test.mov");
     recordedVideoPlayback.play();
     recordedDepthPlayback.play();
+    
+    //setup
+    sender.setup("localhost", 6666);
    
     //of screen stuff
     ofSetFrameRate(30);
@@ -294,6 +297,8 @@ void ofApp::update(){
             for (int j = 0; j < gridContours[i].size(); j++) {
                 int label = gridContours[i].getLabel(j);
                 //work out velocity
+                //cout << "bamp" << endl;
+                
                 if (dTracker.existsPrevious(label)) {
                     const cv::Rect &current = dTracker.getCurrent(label);
                     const cv::Rect &previous = dTracker.getPrevious(label);
@@ -305,11 +310,25 @@ void ofApp::update(){
                     //vels.push_back(v);
                     vels.push_back(velocity);
                     
+                    //TODO SORT VECTORS TO GET LARGEST VECTOR
+                    
                 }
             }
             //ofSort(vels, sortVectorByLength);
             if (vels.size() > 0) {
-                cout << "grid number = " << i << " velocity mag = " << vels[0].length() << endl;
+                ofxOscMessage m;
+                char str[15];
+                sprintf(str, "/grid/%d", i);
+                //cout << str << endl;
+                m.setAddress(str);
+                m.addFloatArg(vels[0].x);
+                m.addFloatArg(vels[0].y);
+                sender.sendMessage(m, false);
+                
+                if (i == 5) {
+                    cout << "grid number = " << i << " velocity mag = " << vels[0].length() << endl;
+                    cout << "osc message = " << str << " " << vels[0].x << " " << vels[0].y << endl;
+                }
             }
         }
         

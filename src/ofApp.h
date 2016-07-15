@@ -7,6 +7,7 @@
 #include "ofxCv.h"
 #include "ofxKinect.h"
 #include "ofxVideoRecorder.h"
+#include "ofxOsc.h"
 
 class BlobPeople : public ofxCv::RectFollower {
 protected:
@@ -87,6 +88,8 @@ class ofApp : public ofBaseApp{
     bool bPlaying;
     
     bool newFrame;
+    
+    ofxOscSender sender;
     
 	public:
 		void setup();
